@@ -30,8 +30,10 @@ function [rawDataTable,fixedVars, MCvars] = getMCoutputTable(mainOutputFile, sum
     end
     if printPlots
         fs = 9;
+        mSizeScale = 0.1;
     else
         fs = 15;
+        mSizeScale = 1;
     end
     
 %% A Few tuned/tunable user params to consider for inputs
@@ -64,18 +66,20 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
     vardist = cell(nMC,1);
     varval1 = zeros(nMC,1);
     varval2 = zeros(nMC,1);
-    fn = fieldnames(MC.pI);
-    for fi = 1:length(fn)
-        varval1(fi) = MC.pI.(fn{fi}).range(1);
-        varval2(fi) = MC.pI.(fn{fi}).range(2);
-        vardist{fi} = MC.pI.(fn{fi}).dist;
+    fnci = fieldnames(MC.cI);
+    nci  = length(fnci);
+    for fi = 1:nci
+        varval1(fi) = MC.cI.(fnci{fi}).range(1);
+        varval2(fi) = MC.cI.(fnci{fi}).range(2);
+        vardist{fi} = MC.cI.(fnci{fi}).dist;
     end
-    fn = fieldnames(MC.cI);
-    for fi = 1:length(fn)
-        varval1(fi) = MC.cI.(fn{fi}).range(1);
-        varval2(fi) = MC.cI.(fn{fi}).range(2);
-        vardist{fi} = MC.cI.(fn{fi}).dist;
+    fnpi = fieldnames(MC.pI);
+    for fi = 1:length(fnpi)
+        varval1(fi+nci) = MC.pI.(fnpi{fi}).range(1);
+        varval2(fi+nci) = MC.pI.(fnpi{fi}).range(2);
+        vardist{fi+nci} = MC.pI.(fnpi{fi}).dist;
     end
+
     MCvars = table(varval1,varval2,vardist,'RowNames',MCvarnames,...
         'VariableNames',{'Value 1','Value 2','Distribution Type'});
 
@@ -123,7 +127,9 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
                    plumeFlux.qwC(ii) = dat(zeFilt).pO.m_l(ri) + dat(zeFilt).pO.m_v(ri);
 %                 end
             else
-                plumeFlux.qw0(ii) =  - dat(zeFilt).cI.Q.*dat(zeFilt).cI.n_0; % Add magmatic water for steam plume cases    
+                % Add magmatic water for steam plume cases, but ignore n_ec
+                % as assumed to come from cauldron
+                plumeFlux.qw0(ii) =  - dat(zeFilt).cI.Q.*dat(zeFilt).cI.n_0; 
             end
     end
 
@@ -238,6 +244,59 @@ QpBreach_over_Qp = plumeFlux.QpBreach./plumeFlux.Qp;
     rawDataTable.hm(clp3) = h_m_predict;
     dataTable.hm(clp3)    = h_m_predict;
 
+
+ %% Calculate collapse regimes, proxy collapse frac
+
+% Test some metrics for getting a smoothed collapse regime function
+
+% Get a scaled marker size for plots based on total mass flux
+mrng = 60;
+msz1 = 30;
+if strcmp(QScale,'log')
+    msz = (log10(plumeFlux.Qp)-log10(min(plumeFlux.Qp)))./range(log10(plumeFlux.Qp)).*mrng + msz1;
+else
+    msz = (plumeFlux.Qp-min(plumeFlux.Qp))./range(plumeFlux.Qp).*mrng + msz1;
+end
+msz = msz.*mSizeScale;
+co = get(0,'DefaultAxesColorOrder');
+
+
+% Get and normalize data
+x = table2array(rawDataTable(:,{'Q','Ze'}));
+if strcmp(QScale,'log')
+    x(:,1) = log10(x(:,1));
+end
+x(:,1) = normalize(x(:,1),'range');
+x(:,2) = normalize(x(:,2),'range');
+
+% 1 - get neighbourhood for regime to produce a "smoothed" regime curve
+%      -> these will be used as weights for each point?
+% 2 - get mean neighbourhood values for:
+%       - regime
+%       - hm, Qw0, Qs0, QwC, QsC
+%       - A_clps?
+
+% Get all neighbourhoods for all points
+chiSqrDist = @(x,Z) sqrt((bsxfun(@minus,x,Z).^2)*distance_weights);  % chi-square distance metric
+Idx = knnsearch(x,x,'Distance',chiSqrDist,'K',n_neighbours);
+
+% Use matrix array of weights and indices to build weighted mean for all
+% points based on their neighbourhood
+regime_neighbourhood = rawDataTable.clps_regime(Idx); % Which regimes are in each point neighbourhood?
+weights = regime_weights(regime_neighbourhood+1);
+num_regimes = sum(diff(sort(regime_neighbourhood,2),1,2)~=0,2)+1; % How many regimes represented in each neighbourhood?
+blend_regimes = num_regimes>1; % Take the neighbourhood mean only where more than one regime are present
+for vi=1:length(varNames)
+    % Take the arithmetic mean of the neighbourhood
+    dataTable.(varNames{vi})(blend_regimes) = sum(weights(blend_regimes,:) ...
+        .* dataTable.(varNames{vi})(Idx(blend_regimes,:)), 2, 'omitnan')...
+        ./ sum(weights(blend_regimes,:), 2, 'omitnan');
+end
+
+% ----- END OF PROCESSING -----
+%% ========================================================================
+%                               PLOTTING
+%  ========================================================================
 %% Plot imputed h_m scaling for steam plume/fountain regime
 if makePlots
     nr = 2;
@@ -291,52 +350,6 @@ if makePlots
     
     % Getting fountain scaling constant C_f...
 end
- %% Calculate collapse regimes, proxy collapse frac
-
-% Test some metrics for getting a smoothed collapse regime function
-
-mrng = 60;
-msz1 = 30;
-if strcmp(QScale,'log')
-    msz = (log10(plumeFlux.Qp)-log10(min(plumeFlux.Qp)))./range(log10(plumeFlux.Qp)).*mrng + msz1;
-else
-    msz = (plumeFlux.Qp-min(plumeFlux.Qp))./range(plumeFlux.Qp).*mrng + msz1;
-end
-co = get(0,'DefaultAxesColorOrder');
-
-
-% Get and normalize data
-x = table2array(rawDataTable(:,{'Q','Ze'}));
-if strcmp(QScale,'log')
-    x(:,1) = log10(x(:,1));
-end
-x(:,1) = normalize(x(:,1),'range');
-x(:,2) = normalize(x(:,2),'range');
-
-% 1 - get neighbourhood for regime to produce a "smoothed" regime curve
-%      -> these will be used as weights for each point?
-% 2 - get mean neighbourhood values for:
-%       - regime
-%       - hm, Qw0, Qs0, QwC, QsC
-%       - A_clps?
-
-% Get all neighbourhoods for all points
-chiSqrDist = @(x,Z) sqrt((bsxfun(@minus,x,Z).^2)*distance_weights);  % chi-square distance metric
-Idx = knnsearch(x,x,'Distance',chiSqrDist,'K',n_neighbours);
-
-% Use matrix array of weights and indices to build weighted mean for all
-% points based on their neighbourhood
-regime_neighbourhood = rawDataTable.clps_regime(Idx); % Which regimes are in each point neighbourhood?
-weights = regime_weights(regime_neighbourhood+1);
-num_regimes = sum(diff(sort(regime_neighbourhood,2),1,2)~=0,2)+1; % How many regimes represented in each neighbourhood?
-blend_regimes = num_regimes>1; % Take the neighbourhood mean only where more than one regime are present
-for vi=1:length(varNames)
-    % Take the arithmetic mean of the neighbourhood
-    dataTable.(varNames{vi})(blend_regimes) = sum(weights(blend_regimes,:) ...
-        .* dataTable.(varNames{vi})(Idx(blend_regimes,:)), 2, 'omitnan')...
-        ./ sum(weights(blend_regimes,:), 2, 'omitnan');
-end
-
 
 %% KNN weighting plots
 if makePlots
@@ -383,12 +396,6 @@ if makePlots
 %     viewangle = [0 0 1]; 
     viewangle = [-1 0.4 0.6];
 
-    mrng = 60;
-    msz1 = 30;
-    msz = (plumeFlux.Qp-min(plumeFlux.Qp))./range(plumeFlux.Qp).*mrng + msz1;
-    co = get(0,'DefaultAxesColorOrder');
-
-
     figure('position',figpos)
     for ai = 1:length(varNames)
         if strcmp(varNames{ai},'clps_regime')
@@ -429,11 +436,11 @@ end
 %% Show raw and transformed data with and without scaling - hm and qw0 only
 if makePlots
     figpos = [50 50 1500 600];
-    cbpos = [0.92 0.02];
+    cbpos = [0.83 0.015];
     nr = 1;
     nc = 2;
-    dx = 0.08;
-    ppads = [0.09 0.1 0.15 0.07];
+    dx = 0.09;
+    ppads = [0.07 0.18 0.2 0.07];
     cmap = redblue;
 
     % -------- H_m ---------
@@ -479,13 +486,14 @@ if makePlots
     sp(3) = scatter(Ze_over_Rv, dataTable.hm./dataTable.Q.^(1/4),msz, ...
         dataTable.clps_regime,'filled','MarkerEdgeColor','k','MarkerEdgeAlpha',0.4,...
         'MarkerFaceAlpha',0.5);
-    title('Plume height: Non-dimensionalized')
+    title('Plume height: Scaled')
     xlabel('$\displaystyle\frac{Z_e}{R_v}$','interpreter','latex')
-    ylabel('$\displaystyle\frac{h_m}{Q_p^{1/4}}$','interpreter','latex')
+    ylabel('$\displaystyle\frac{h_m}{Q_p^{1/4}}$','interpreter','latex','rotation',0,'HorizontalAlignment','right')
     cb = colorbar('location','eastoutside');
     cb.Label.String = 'Continuous Collapse Regime';
     cb.Ticks = [0 1 2];
     cb.TickLabels = {'Buoyant','Total Collapse','Steam Plume'};
+    cb.Position([1 3]) = cbpos;
     set(gca,'FontSize',fs)
     colormap(cmap)
 
@@ -540,6 +548,7 @@ if makePlots
     cb.Label.String = 'Continuous Collapse Regime';
     cb.Ticks = [0 1 2];
     cb.TickLabels = {'Buoyant','Total Collapse','Steam Plume'};
+    cb.Position([1 3]) = cbpos;
     set(gca,'FontSize',fs)
     colormap(cmap)
     
@@ -574,11 +583,6 @@ if false %makePlots
     ppads2 = [0.08 0.03 0.25 0.25];
 %     viewangle = [0 0 1]; 
     viewangle = [-1 -0.8 0.5];
-
-    mrng = 60;
-    msz1 = 30;
-    msz = (plumeFlux.Qp-min(plumeFlux.Qp))./range(plumeFlux.Qp).*mrng + msz1;
-    co = get(0,'DefaultAxesColorOrder');
 
 
     figure('position',figpos)

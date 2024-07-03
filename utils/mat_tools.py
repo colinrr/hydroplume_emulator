@@ -8,6 +8,7 @@ Created on Thu Jun 27 17:10:46 2024
 
 import scipy.io as spio
 import numpy as np
+from typing import Union
 
 
 def matfile_struct_to_dict(matfile: str, var_name: str) -> dict:
@@ -64,3 +65,15 @@ def matlab_struct_to_dict(matlab_struct: dict) -> dict:
         # if not np.shape(python_dict[field]):
         #     python_dict[field] =  python_dict[field][0]
     return python_dict
+
+def extrapVentRadius(Q: Union[float,np.ndarray[float]]) -> Union[float,np.ndarray[float]]:
+    # Conduit radius extrapolation for control scenarios    
+    # Empirical curve fit for conduit area
+    C1 = 0.009913;
+    C2 = 0.7267;
+    C3 = 58.04;
+    afun = lambda x : C1 * (x)**C2 + C3;
+
+    r = (afun(Q) / np.pi)**(1/2);
+    
+    return r

@@ -1,4 +1,4 @@
-function [rawDataTable,fixedVars, MCvars] = getMCoutputTable(mainOutputFile, summaryOutputFile, dat, QScale, makePlots, printPlots)
+function [dataTable,scaledDataTable,fixedVars, MCvars] = getMCoutputTable(mainOutputFile, summaryOutputFile, dat, QScale, makePlots, printPlots)
 %  mainOutputFile = saved MAIN output file with "dat" struct
 %  summaryOutputFile = saved summary file with "qA" struct
 %  Qscale = 'log' or 'linear'. Generally defaults to 'log', unless MC input
@@ -80,8 +80,8 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
         vardist{fi+nci} = MC.pI.(fnpi{fi}).dist;
     end
 
-    MCvars = table(varval1,varval2,vardist,'RowNames',MCvarnames,...
-        'VariableNames',{'Value 1','Value 2','Distribution Type'});
+    MCvars = table(string(MCvarnames),varval1,varval2,vardist,...
+        'VariableNames',{'Variable','Value 1','Value 2','Distribution Type'});
 
 
 %% Get main model outputs - NOT ACTUALLY CLEAR IF I NEED MOST OF THESE...
@@ -216,14 +216,15 @@ QpBreach_over_Qp = plumeFlux.QpBreach./plumeFlux.Qp;
 
 % 2) Get linear model for r_0 (jet radius @ breach) for "
     % - Get total collapse indices, filtered to relatively large Ze/r_v
-    
-    Fr0 = qA.pI.u_0./(9.81 * qA.pI.r_0).^(1/2); % Calculate Froude # at water breach
+    r_0 = plumeFlux.r_p;
+    u_0 = plumeFlux.u_0;
+    Fr0 = plumeFlux.u_0./(9.81 * plumeFlux.r_p).^(1/2); % Calculate Froude # at water breach
     
     rFilt = zeFilt & plumeFlux.clps_regime>0; % Filter for collapse regime
     ft = fittype( 'poly11' ); % Bi_linear
     % Fit Ze/Rv vs log10(Q) vs r_0/r_vent (extrapolated)
     [xData, yData, zData] = prepareSurfaceData( Ze_over_Rv(rFilt),log10(plumeFlux.Qp(rFilt)),...
-        qA.pI.r_0(rFilt)./extrapVentRadius(plumeFlux.Qp(rFilt)) );
+        r_0(rFilt)./extrapVentRadius(plumeFlux.Qp(rFilt)) );
     
     [r0Mdl, gof(2)] = fit( [xData, yData], zData, ft );
     
@@ -232,7 +233,7 @@ QpBreach_over_Qp = plumeFlux.QpBreach./plumeFlux.Qp;
 
     clp3 = plumeFlux.clps_regime==2;
     u_0_predict = u0Mdl(Ze_over_Rv(clp3), n_total(clp3));
-    u_0_predict(u_0_predict<0) = NaN;
+    u_0_predict(u_0_predict<0) = 0;
     r_0_predict = r0Mdl(Ze_over_Rv(clp3), log10(plumeFlux.Qp(clp3))) .* extrapVentRadius(plumeFlux.Qp(clp3)); % Dimensionalize
     r_0_predict(r_0_predict<0) = NaN;
     
@@ -244,6 +245,8 @@ QpBreach_over_Qp = plumeFlux.QpBreach./plumeFlux.Qp;
     rawDataTable.hm(clp3) = h_m_predict;
     dataTable.hm(clp3)    = h_m_predict;
 
+    r_0(clp3) = r_0_predict;
+    Fr0_final = Fr0; Fr0_final(clp3) = Fr_0_predict;
 
  %% Calculate collapse regimes, proxy collapse frac
 
@@ -293,6 +296,72 @@ for vi=1:length(varNames)
         ./ sum(weights(blend_regimes,:), 2, 'omitnan');
 end
 
+%% Make a scaled data table to better highlight physical relationships
+scaledDataTable = dataTable;
+
+newVars = {
+    'Q'
+    'logQ'
+    'Ze_over_Rv'
+    'T'
+    'n_total'
+    'Rv'
+    'a_over_Rv'
+    'D'
+    'clps_regime'
+    'hm_over_Q14'
+    'r0'
+    'rC_over_r0'
+    'rC_over_Rv'
+    'Fr0'
+    'qs0_over_Q'
+    'qsC_over_Q'
+    'qw0_over_Q'
+    'qwC_over_Q'
+    };
+
+scaledDataTable = table(...
+                    dataTable.Q, ...
+                    log10(dataTable.Q), ...
+                    Ze_over_Rv,...
+                    dataTable.T,...
+                    n_total,...
+                    extrapVentRadius(dataTable.Q),...
+                    dataTable.conduit_radius./extrapVentRadius(dataTable.Q),...
+                    dataTable.D,...
+                    dataTable.clps_regime,...
+                    dataTable.hm./dataTable.Q.^(1/4),...
+                    r_0,...
+                    dataTable.rC./r_0,...
+                    dataTable.rC./extrapVentRadius(dataTable.Q),...
+                    Fr0_final,...
+                    dataTable.qs0./dataTable.Q,...
+                    dataTable.qsC./dataTable.Q,...
+                    dataTable.qw0./dataTable.Q,...
+                    dataTable.qwC./dataTable.Q,...
+                    'VariableNames',newVars);
+
+scaledRawDataTable = table(...
+                    rawDataTable.Q, ...
+                    log10(rawDataTable.Q), ...
+                    Ze_over_Rv,...
+                    rawDataTable.T,...
+                    n_total,...
+                    extrapVentRadius(rawDataTable.Q),...
+                    rawDataTable.conduit_radius./extrapVentRadius(rawDataTable.Q),...
+                    rawDataTable.D,...
+                    rawDataTable.clps_regime,...
+                    rawDataTable.hm./rawDataTable.Q.^(1/4),...
+                    r_0,...
+                    rawDataTable.rC./r_0,...
+                    rawDataTable.rC./extrapVentRadius(rawDataTable.Q),...
+                    Fr0_final,...
+                    rawDataTable.qs0./rawDataTable.Q,...
+                    rawDataTable.qsC./rawDataTable.Q,...
+                    rawDataTable.qw0./rawDataTable.Q,...
+                    rawDataTable.qwC./rawDataTable.Q,...
+                    'VariableNames',newVars);
+
 % ----- END OF PROCESSING -----
 %% ========================================================================
 %                               PLOTTING
@@ -304,7 +373,7 @@ if makePlots
     
     figure
     % Showing scaling fit for collapsing regime
-    scatter(0.9*Fr0(rFilt).^2, plumeFlux.hm(rFilt)./qA.pI.r_0(rFilt), 30, n_total(rFilt) )
+    scatter(0.9*Fr0(rFilt).^2, plumeFlux.hm(rFilt)./r_0(rFilt), 30, n_total(rFilt) )
     hold on
     plot([0 max(0.9*Fr0(rFilt).^2)], [0 max(0.9*Fr0(rFilt).^2)], '--k')
     scatter(0.9*Fr_0_predict.^2, h_m_predict./r_0_predict, 30, 'x')
@@ -324,7 +393,7 @@ if makePlots
     
     % Getting r_0
     subplot(nr,nc,2)
-    scatter3(Ze_over_Rv(rFilt), log10(plumeFlux.Qp(rFilt)), qA.pI.r_0(rFilt),...
+    scatter3(Ze_over_Rv(rFilt), log10(plumeFlux.Qp(rFilt)), r_0(rFilt),...
         20, n_total(rFilt), 'filled' );
     hold on
     scatter3(Ze_over_Rv(clp3), log10(plumeFlux.Qp(clp3)), r_0_predict ,20,  n_total(clp3), 'x')
@@ -334,7 +403,7 @@ if makePlots
     set(gca,'FontSize',fs)
     
     subplot(nr,nc,3)
-    scatter3(qA.pI.u_0, qA.pI.r_0, Fr0, 30, plumeFlux.Qp, 'filled')
+    scatter3(u_0, r_0, Fr0, 30, plumeFlux.Qp, 'filled')
     hold on
     scatter3(u_0_predict, r_0_predict, Fr_0_predict, 30 , plumeFlux.Qp(clp3), 'x')
     xlabel('u_0'); ylabel('r_0'); zlabel('Fr_0')
@@ -363,7 +432,7 @@ if makePlots
     
     figure
     hold(gca,'on')
-    plotByRegime(x(:,1), x(:,2), plumeFlux.clps_regime,...
+    scatter3ByRegime(x(:,1), x(:,2), plumeFlux.clps_regime,...
                 msz, plumeFlux.clps_regime, [0.5 0.5 0.5]);
     view([0 0 1])
     plot3(y(:,1),y(:,2),plumeFlux.clps_regime(samp_idx),'ok','MarkerFaceColor','k')
@@ -407,10 +476,10 @@ if makePlots
         end
         hold on
         
-        handles = plotByRegime(rawDataTable.Q, rawDataTable.Ze, rawDataTable.(varNames{ai}),...
+        handles = scatter3ByRegime(rawDataTable.Q, rawDataTable.Ze, rawDataTable.(varNames{ai}),...
             msz, rawDataTable.clps_regime, [0.7 0.7 0.7] );
 
-        handles2 = plotByRegime(dataTable.Q, dataTable.Ze, dataTable.(varNames{ai}),...
+        handles2 = scatter3ByRegime(dataTable.Q, dataTable.Ze, dataTable.(varNames{ai}),...
             msz, rawDataTable.clps_regime, co(coindex(ai),:) );
         for fi=1:length(handles)
             handles(fi).DisplayName = [handles(fi).DisplayName ': raw'];
@@ -433,6 +502,80 @@ if makePlots
     end
 end
 
+%% Scaled KNN weighting plots
+if makePlots
+
+% ------ Show knn weighted mean output -------
+    plotVarNames = { 
+        'clps_regime'
+        'hm_over_Q14'
+        'qs0_over_Q'
+        'qsC_over_Q'
+        'rC_over_Rv'
+        'qw0_over_Q'
+        'qwC_over_Q'
+        };
+
+    scaledLabels  = { 'Collapse flag'
+                'h_m/Q^{1/4}'
+                'Q_{s0}/Q'
+                'Q_{sC}/Q'
+                'r_{clps}/r_v'
+                'Q_{w0}/Q'
+                'Q_{wC}/Q'};
+    
+    regimes = [0 1 2];
+    regNames = {'Buoyant','Collapse','No breach'};
+    symbols = ['o','x','s'];
+    faceAlpha = [1 0 0];
+    calpha = [0.7 0.95 0.5];
+    
+    
+    nr = 2;
+    nc = 4;
+    dx = 0.04;
+    dy = 0.09;
+    xsz = [1 1 1 1.5];
+    ysz = [1 1];
+    figpos = [50 50 1600 800];
+    ppads = [0.08 0.03 0.08 0.03];
+    ppads2 = [0.08 0.03 0.25 0.25];
+%     viewangle = [0 0 1]; 
+    viewangle = [-1 0.4 0.6];
+
+    figure('position',figpos)
+    for ai = 1:length(plotVarNames)
+        if strcmp(plotVarNames{ai},'clps_regime')
+            ax(ai)=tightSubplot(1,nc,axpos(ai),dx,dy,ppads2,xsz,ysz);
+            set(gca,'YDir','reverse')
+            set(gca,'ZTick',[0 1 2],'ZTickLabel',{'Buoyant','Collapsing','Steam Plume'})
+        else
+            ax(ai)=tightSubplot(nr,nc,axpos(ai),dx,dy,ppads,xsz,ysz);
+        end
+        hold on
+        
+        handles = scatterByRegime(scaledRawDataTable.Ze_over_Rv, scaledRawDataTable.(plotVarNames{ai}),...
+            msz, scaledRawDataTable.clps_regime, [0.7 0.7 0.7] );
+
+        handles2 = scatterByRegime(scaledDataTable.Ze_over_Rv, scaledDataTable.(plotVarNames{ai}),...
+            msz, scaledRawDataTable.clps_regime, co(coindex(ai),:) );
+        for fi=1:length(handles)
+            handles(fi).DisplayName = [handles(fi).DisplayName ': raw'];
+            handles2(fi).DisplayName = [handles2(fi).DisplayName ': KNN-weighted'];
+        end
+        
+        title(plotNames{ai})
+        if strcmp(plotVarNames{ai},'clps_regime')
+            legend('location','southeast')
+        end
+
+        xlabel('Z_w/r_v')
+        grid on
+        ylabel(scaledLabels{ai})
+        set(gca,'FontSize',fs)
+        xlim([0 8])
+    end
+end
 %% Show raw and transformed data with and without scaling - hm and qw0 only
 if makePlots
     figpos = [50 50 1500 600];
@@ -478,6 +621,12 @@ if makePlots
     
     % Scaledƒ
     sax(2) = tightSubplot(nr,nc,2,dx,[],ppads);
+%     sp(1) = scatter(Ze_over_Rv(~clp3), rawDataTable.hm(~clp3)./sqrt(r0(~clp3)),msz(~clp3), ...
+%         dataTable.clps_regime(~clp3),'MarkerEdgeColor','k','MarkerEdgeAlpha',0.4);
+%     hold on
+%     sp(2) = scatter(Ze_over_Rv(clp3), rawDataTable.hm(clp3)./sqrt(r0(clp3)),msz(clp3), ...
+%         dataTable.clps_regime(clp3),'x','MarkerEdgeColor','k','MarkerEdgeAlpha',0.4);
+
     sp(1) = scatter(Ze_over_Rv(~clp3), rawDataTable.hm(~clp3)./dataTable.Q(~clp3).^(1/4),msz(~clp3), ...
         dataTable.clps_regime(~clp3),'MarkerEdgeColor','k','MarkerEdgeAlpha',0.4);
     hold on
@@ -594,7 +743,7 @@ if false %makePlots
         end
         hold on
         
-        plotByRegime(rawDataTable.Q, rawDataTable.Ze, plumeFlux.(varNames{ai}),...
+        scatter3ByRegime(rawDataTable.Q, rawDataTable.Ze, plumeFlux.(varNames{ai}),...
             msz, plumeFlux.clps_regime, co(coindex(ai),:) )
 
         title(plotNames{ai})
@@ -611,7 +760,7 @@ end
 
 end
 
-function fi = plotByRegime(x,y,z,msz,regime,color)
+function fi = scatter3ByRegime(x,y,z,msz,regime,color)
     regimes = [0 1 2];
     regNames = {'Buoyant','Collapse','No breach'};
     symbols = ['o','x','s'];
@@ -624,6 +773,23 @@ function fi = plotByRegime(x,y,z,msz,regime,color)
         Y = y(regime==regimes(ri));
         Z = z(regime==regimes(ri));
         fi(ri) = scatter3(X,Y,Z,msz(regime==regimes(ri)),...
+            rgba2rgb(color,calpha(ri)),symbols(ri),...
+            'MarkerFaceAlpha',faceAlpha(ri),'DisplayName',regNames{ri});
+    end
+end
+
+function fi = scatterByRegime(x,y,msz,regime,color)
+    regimes = [0 1 2];
+    regNames = {'Buoyant','Collapse','No breach'};
+    symbols = ['o','x','s'];
+    faceAlpha = [1 0 0];
+    calpha = [0.7 0.95 0.5];
+    hold(gca,'on')
+
+    for ri = 1:length(regimes)
+        X = x(regime==regimes(ri));
+        Y = y(regime==regimes(ri));
+        fi(ri) = scatter(X,Y,msz(regime==regimes(ri)),...
             rgba2rgb(color,calpha(ri)),symbols(ri),...
             'MarkerFaceAlpha',faceAlpha(ri),'DisplayName',regNames{ri});
     end

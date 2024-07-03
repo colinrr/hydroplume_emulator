@@ -8,14 +8,15 @@ outputDir = '/Users/crrowell/code/research-projects/katla/katlaPlumePhysicsEmula
 
 MCfiles = {
 %            'KatlaHydro_v8_noLd_2022-10-01_N10000.mat'
-           'KatlaHydro_v8_noLd_2024-06-22_N10000.mat'
+%            'KatlaHydro_v8_noLd_2024-06-22_N10000.mat'
+           'KatlaHydro_v8_noLd_2024-06-30_N20000.mat'
           };
       
-writeData = false;
+writeData = true;
 
 figDir = '~/Kahuna/phd-docs/research/katla/manuscript_2024/mat-figs/';
     makePlots = true;
-    writePlots = true;
+    writePlots = false;
     
 %%
 
@@ -23,7 +24,7 @@ mainMCfile = fullfile(dDir,MCfiles{1});
 summaryMCfile = fullfile(dDir,['outputSummary_' MCfiles{1}]);
 loadif(mainMCfile,'dat');
 
-[dataTable,fixedVars, MCvars] = getMCoutputTable(mainMCfile, summaryMCfile, dat, [], makePlots, writePlots);
+[dataTable,scaledDataTable,fixedVars, MCvars] = getMCoutputTable(mainMCfile, summaryMCfile, dat, [], makePlots, writePlots);
 
 % Setting units tside teh function for now since they are generally variable in MC
 % input
@@ -33,6 +34,7 @@ loadif(mainMCfile,'dat');
 if writeData
     [~,oname,~] = fileparts(mainMCfile);
     parquetwrite(fullfile(outputDir,[oname '.parquet']),dataTable)
+    parquetwrite(fullfile(outputDir,[oname '_scaled.parquet']),scaledDataTable)
     save(fullfile(outputDir,'fixed_MC_vars'),'fixedVars')
     parquetwrite(fullfile(outputDir,'rand_MC_vars'),MCvars)
 end

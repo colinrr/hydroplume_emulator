@@ -9,6 +9,7 @@ Created on Fri Jun 28 13:55:37 2024
 # Run a random forest regressor on Katla Monte Carlo ouput
 
 import pandas as pd
+import numpy as np
 # import scipy.io as spio
 from os.path import join
 from sklearn.model_selection import train_test_split
@@ -33,6 +34,7 @@ bootstrap    = True
 oob_score    = True
 n_jobs       = 2
 min_samples_split = 2
+# min_samples_leaf = 1
 verbose = 1
 
 
@@ -77,7 +79,7 @@ regressor_rf.fit(X,Y)
 
 regressor_rf.oob_score_
 
-predictions = rf.predict(X_train)
+predictions = regressor_rf.predict(X_test)
 
 #%% Check feature importances
 

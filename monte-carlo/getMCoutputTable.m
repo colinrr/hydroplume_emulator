@@ -60,7 +60,7 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
         fixedVars.(fn{fi}) = cI.(fn{fi}); 
     end
 
-    % Get summary MC input variables
+    % Get summary MC input variables as a table
     MCvarnames = [fieldnames(MC.cI); fieldnames(MC.pI)];
     nMC = length(MCvarnames);
     vardist = cell(nMC,1);
@@ -84,7 +84,8 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
         'VariableNames',{'Variable','Value 1','Value 2','Distribution Type'});
 
 
-%% Get main model outputs - NOT ACTUALLY CLEAR IF I NEED MOST OF THESE...
+%% Get main model outputs in a convenient struct
+%   --> Calculate a few extra numbers to go with
 
     u_crit = 15;  % Critical minimum velocity at which to define collapse radius
 
@@ -94,21 +95,23 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
     rawDataTable = renamevars(rawDataTable,'Zw','Ze'); % Renaming for consistency with original paper
     
     plumeFlux.QClevel = qA.QClevel(qkeep,:);
-    plumeFlux.clps = logical(qA.pO.collapse(qkeep));  % Collapse
-    plumeFlux.Qp    = qA.cI.Q(qkeep);
-    plumeFlux.Ze    = qA.cI.Zw(qkeep);
-    plumeFlux.u_0   = qA.pI.u_0(qkeep);
-    plumeFlux.r_v   = qA.cI.conduit_radius(qkeep);
-    plumeFlux.r_p   = qA.pI.r_0(qkeep);
-    plumeFlux.rhop  = qA.pI.rho_B0(qkeep);
-    plumeFlux.hm    = qA.pO.hm(qkeep) + qA.cI.vh0(qkeep); % Max height
-    plumeFlux.hb    = qA.pO.hb(qkeep) + qA.cI.vh0(qkeep); % LNB height
+    plumeFlux.clps = logical(qA.pO.collapse(qkeep));    % Collapse flag
+    plumeFlux.Qp    = qA.cI.Q(qkeep);                   % Magma mass flux
+    plumeFlux.Ze    = qA.cI.Zw(qkeep);                  % Surface water depth
+    plumeFlux.u_0   = qA.pI.u_0(qkeep);                 % Subaerial plume source velocity
+    plumeFlux.r_v   = qA.cI.conduit_radius(qkeep);      % Conduit radius
+    plumeFlux.r_p   = qA.pI.r_0(qkeep);                 % Subaerial plume source radius
+    plumeFlux.rhop  = qA.pI.rho_B0(qkeep);              % Subaerial plume source density
+    plumeFlux.hm    = qA.pO.hm(qkeep) + qA.cI.vh0(qkeep); % Max plume height
+    plumeFlux.hb    = qA.pO.hb(qkeep) + qA.cI.vh0(qkeep); % Neutral buoyancy plume height
+    
+    % Key outputs we want to calculate for a physics emulator
     plumeFlux.zC   = zeros(nn,1); % Collapse height
     plumeFlux.rC   = zeros(nn,1); % Collapse radius
     plumeFlux.qs0  = zeros(nn,1); % starting subaerial particle flux
     plumeFlux.qw0  = zeros(nn,1); % starting subaerial water flux
-    plumeFlux.qsC  = zeros(nn,1); % collapse particle flux
-    plumeFlux.qwC  = zeros(nn,1); % collapse water flux
+    plumeFlux.qsC  = zeros(nn,1); % particle flux at collapse
+    plumeFlux.qwC  = zeros(nn,1); % water flux at collapse
 
 
     for ii=1:nn
@@ -118,15 +121,18 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
             if qA.QClevel(zeFilt,2) == 1 % Water breach successful
                 plumeFlux.qs0(ii) = dat(zeFilt).pO.m_s(1);
                 plumeFlux.qw0(ii) = dat(zeFilt).pO.m_l(1) + dat(zeFilt).pO.m_v(1) - dat(zeFilt).cI.Q.*dat(zeFilt).cI.n_0; % Discount magmatic water
-%                 if plumeFlux.clps(ii)
-                   ri = find( (dat(zeFilt).pO.u.*sin(dat(zeFilt).pO.angle)) <= u_crit,1,'first');
-                   plumeFlux.zC(ii) = dat(zeFilt).pO.z(ri);  % Height at collapse. 
-                   plumeFlux.rC(ii) = dat(zeFilt).pO.r(ri);
 
-                   plumeFlux.qsC(ii) = dat(zeFilt).pO.m_s(ri);
-                   plumeFlux.qwC(ii) = dat(zeFilt).pO.m_l(ri) + dat(zeFilt).pO.m_v(ri);
-%                 end
-            else
+               % Obtain collapse parameters once plume velocity drops below
+               % a critical value
+               ri = find( (dat(zeFilt).pO.u.*sin(dat(zeFilt).pO.angle)) <= u_crit,1,'first');
+               plumeFlux.zC(ii) = dat(zeFilt).pO.z(ri);  % Height at collapse. 
+               plumeFlux.rC(ii) = dat(zeFilt).pO.r(ri);  % Radius at collapse
+
+               % Collapse fluxes
+               plumeFlux.qsC(ii) = dat(zeFilt).pO.m_s(ri);
+               plumeFlux.qwC(ii) = dat(zeFilt).pO.m_l(ri) + dat(zeFilt).pO.m_v(ri);
+
+            else % Water breach unsuccessful in simulation
                 % Add magmatic water for steam plume cases, but ignore n_ec
                 % as assumed to come from cauldron
                 plumeFlux.qw0(ii) =  - dat(zeFilt).cI.Q.*dat(zeFilt).cI.n_0; 
@@ -145,14 +151,13 @@ regime_weights      = [0.45 0.45 0.2]; % Relative weights among regimes
     plumeFlux.Aclps = pi.*plumeFlux.rC.^2;
     plumeFlux.u_crit = u_crit;
 
-    % Total mass flux at water breach
+    % Total mass flux at water breach - for fountain scaling
     plumeFlux.QpBreach = plumeFlux.rhop.*plumeFlux.u_0.*pi.*plumeFlux.r_p.^2;
 
-    % Behavior, all runs
-    plumeFlux.clps_regime = zeros(nn,1);  % Default buoyant plumes
-    plumeFlux.clps_regime(logical(plumeFlux.clps)) = 1; % Total collapse
-    plumeFlux.clps_regime(~plumeFlux.QClevel(:,2)) = 2; % Steam plume
-
+    % Collapse/breach behavior, all runs
+    plumeFlux.clps_regime = zeros(nn,1);                % 0 = Default buoyant plumes
+    plumeFlux.clps_regime(logical(plumeFlux.clps)) = 1; % 1 = Total collapse
+    plumeFlux.clps_regime(~plumeFlux.QClevel(:,2)) = 2; % 2 = Steam plume
 
 %% Get un-processed key output params for emulation
 % -  hm, hb, Qw, Qp, collapse regime (bouyant, partial, total, steam), collapse area
@@ -195,7 +200,7 @@ axpos = [4 1 2 3 5 6 7];
      'NewVariableNames',varNames);
  
  dataTable = rawDataTable; % create copy for processing into smooth fields
-%% Get hm scaling for steam plume regime
+%% Get hm fountain height scaling for steam plume regime
 
 % Get some key non-dimensional quantities
 n_total = sum(dataTable{:,{'n_0','n_ec'}},2);

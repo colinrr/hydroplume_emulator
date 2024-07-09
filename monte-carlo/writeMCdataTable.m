@@ -12,7 +12,7 @@ MCfiles = {
            'KatlaHydro_v8_noLd_2024-06-30_N20000.mat'
           };
       
-writeData = true;
+writeData = false;
 
 figDir = '~/Kahuna/phd-docs/research/katla/manuscript_2024/mat-figs/';
     makePlots = true;
@@ -35,9 +35,10 @@ if writeData
     [~,oname,~] = fileparts(mainMCfile);
     parquetwrite(fullfile(outputDir,[oname '.parquet']),dataTable)
     parquetwrite(fullfile(outputDir,[oname '_scaled.parquet']),scaledDataTable)
-    save(fullfile(outputDir,'fixed_MC_vars'),'fixedVars')
-    parquetwrite(fullfile(outputDir,'rand_MC_vars'),MCvars)
+    save(fullfile(outputDir,[oname '_fixed_MC_vars']),'fixedVars')
+    parquetwrite(fullfile(outputDir,[oname '_rand_MC_vars']),MCvars)
 end
+
 %% Figure output
 
 if writePlots
@@ -47,9 +48,3 @@ if writePlots
     figure(6)
     printpdf('Water-flux-scaled',figDir,[18 8])
 end
-
-%% Test dummy struct for python
-
-testStruct = struct('scalar',5,'vector',1:5,'matrix',eye(5),'char','faafo');
-testStruct.cell = {'faafo' ,2};
-save(fullfile(outputDir,'dummy_struct'),'testStruct')

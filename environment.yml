@@ -1,0 +1,24 @@
+name: hydroplume_emulator
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - black
+  - flake8
+  - isort
+  - pip
+  - ipython
+  - jupyterlab
+  - matplotlib
+  - notebook
+  - numpy
+  - scipy
+  - pandas
+  - scikit-learn
+  - seaborn
+  - spyder-kernels=2.5
+  - fastparquet
+  - pip:
+    - python-dotenv
+    - mkdocs
+    - -e .

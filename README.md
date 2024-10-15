@@ -2,7 +2,8 @@
 
 ## Summary
 
-This repo contains a random forest emulator for a 1D volcanic plume model. The model used for emulation is the coupled conduit-vent-atmosphere model for water-rich eruptions from:
+This repository contains combined matlab and python code for a random-forest-based emulator of convective plume physics.
+The 1D model used for emulation is the coupled conduit-vent-atmosphere model for water-rich eruptions from:
 
 Rowell, C. R., Jellinek, A. M., Hajimirza, S., & Aubry, T. J. (2022). External Surface Water Influence on Explosive Eruption Dynamics, With Implications for Stratospheric Sulfur Delivery and Volcano-Climate Feedback. Frontiers in Earth Science, 10. https://www.frontiersin.org/article/10.3389/feart.2022.788294
 
